@@ -1,3 +1,5 @@
+# T2 - Linux Shell en C
+
 ## Archivos
 
 - `shell.c`: El código fuente la shell en C.
@@ -36,7 +38,7 @@ make run
 
     3. Funcionalidades Avanzadas (P4):
 
-        - Historial pesistente: se guarda en el archivo shell-history, como sugiere el enunciado.
+        - Historial pesistente: se guarda en el archivo shell-history, como sugiere el enunciado. No se especifica el largo del historial, así que solo guardo los últimos 10 para que no llene la pantalla de texto en exceso. Se cambia en la línea 10.
 
         - Reemplazo por variables de entorno: Se detecta cuando el input del usuario requiere el reemplazo por una variable de entorno, utilizando el símbolo "$".
 
@@ -45,3 +47,11 @@ make run
     4. Manejo de errores:
 
         - Intenté manejar todos los posibles erorres que vi usando prints y perror. 
+
+    5. Otros:
+        
+        - Se puede salir del programa con el comando exit, Ctrl+D o Ctrl+C.
+
+        -Agregué que antes del promt aparezca el path del directorio actual, para que se parezca a las terminales comunes.
+
+        - Si el promt no aparece, se puede agregar un comando de igual forma. Buscando por qué me pasaba eso en internet, resulta que es algo que también pasa con otras shell, pero no lo había notado. De todas formas, si se presiona ENTER, que produce un comando o linea vacía, el promt aparece sin cortar el programa. 

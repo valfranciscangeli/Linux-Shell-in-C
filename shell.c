@@ -6,11 +6,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <fcntl.h> 
+#include <fcntl.h>
 
 // Definiciones
 #define MAXSIZE 1024
-#define HISTORY_SIZE 10
+#define HISTORY_SIZE 10 // cambiar si se quiere guardar mas comandos en el historial
 char *history_list[HISTORY_SIZE];
 int history_count = 0;
 
@@ -25,7 +25,12 @@ char *expand_variables(char *arg);
 // Muestra un prompt al usuario
 void show_prompt()
 {
-  printf("best-shell-ever>");
+  char cwd[1024];
+  if (getcwd(cwd, sizeof(cwd)) != NULL) {
+    printf("[%s] best-shell-ever> ", cwd);
+  } else {
+    printf("[?] best-shell-ever> ");
+  }
   fflush(stdout); // asegurarse de que el prompt se muestre inmediatamente
 }
 
@@ -78,6 +83,7 @@ char **parse_command(char *buf)
 void execute_command(char **cmd, int is_background)
 {
   pid_t pid = fork(); // crear un nuevo proceso
+
   if (pid == -1)
   {
     printf("\nSe produjo un error al crear el proceso hijo.\n");
@@ -85,6 +91,18 @@ void execute_command(char **cmd, int is_background)
   }
   else if (pid == 0)
   {
+    // 🔇 Redirección en segundo plano
+    if (is_background)
+    {
+      int devnull = open("/dev/null", O_WRONLY);
+      if (devnull != -1)
+      {
+        dup2(devnull, STDOUT_FILENO);
+        dup2(devnull, STDERR_FILENO); // opcional
+        close(devnull);
+      }
+    }
+
     if (execvp(cmd[0], cmd) < 0)
     {
       printf("\nSe produjo un error al ejecutar el comando: %s\n", cmd[0]);
@@ -94,18 +112,13 @@ void execute_command(char **cmd, int is_background)
   else
   {
     if (is_background) // si es un comando en segundo plano
-    {
 
+    {
       printf("Comando '%s' en segundo plano con PID %d\n", cmd[0], pid);
-      int devnull = open("/dev/null", O_WRONLY);
-      if (devnull != -1)
-      {
-        dup2(devnull, STDOUT_FILENO); // redirige stdout
-        dup2(devnull, STDERR_FILENO); // redirige stderr
-        close(devnull);
-      }
+      fflush(stdout);
     }
     else // si es un comando en primer plano
+
     {
       wait(NULL); // esperar a que el proceso hijo termine
     }
@@ -304,8 +317,15 @@ int main(void)
   {
     show_prompt();
     char *buf = read_input();
-    if (buf == NULL || buf[0] == '\0') // Maneja EOF o línea vacía
+
+    // si falla, se sale del bucle
+    if (buf == NULL) 
       break;
+
+    // si se presiona ENTER (vacio), se ignora
+    if (buf[0] == '\0')
+      continue;
+
     char **cmd = parse_command(buf);
     if (cmd[0] == NULL) // No hay comando
       continue;
@@ -315,7 +335,7 @@ int main(void)
     // agregar el comando al historial
     add_to_history(buf);
 
-    // revisamos si es built-in
+    // si no era built-in, se ejecuta normalmente
     if (!exec_builtins(cmd))
     {
       execute_command(cmd, is_background);
