@@ -6,18 +6,27 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <fcntl.h> 
+
+// Definiciones
 #define MAXSIZE 1024
 #define HISTORY_SIZE 10
 char *history_list[HISTORY_SIZE];
 int history_count = 0;
 
-// MAcro para limpiar la pantalla
+// Declaracion de funciones
+char *expand_variables(char *arg);
+
+// Macro para limpiar la pantalla
 #define clear_screen() printf("\033[H\033[J")
+
+// ============= Funciones del shell =============
 
 // Muestra un prompt al usuario
 void show_prompt()
 {
   printf("best-shell-ever>");
+  fflush(stdout); // asegurarse de que el prompt se muestre inmediatamente
 }
 
 // Lee la entrada del usuario
@@ -30,6 +39,21 @@ char *read_input()
   return buf;
 }
 
+// Funcion para expandir variables de entorno
+char *expand_variables(char *arg)
+{
+  if (arg[0] != '$')
+    return strdup(arg); // no es variable si no empieza con $
+
+  char *nombre = arg + 1; // omitir el $
+  char *valor = getenv(nombre);
+
+  if (valor)
+    return strdup(valor); // si era variables
+  else
+    return strdup(""); // la variable no existe
+}
+
 // Parsea el comando ingresado por el usuario
 char **parse_command(char *buf)
 {
@@ -40,7 +64,10 @@ char **parse_command(char *buf)
   token = strtok_r(buf, " ", &saveptr);
   while (token != NULL)
   {
-    args[i++] = token;
+    args[i++] = expand_variables(token); // se modifica aca para revisar si se usa una variable de entorno
+    if (i >= 99)
+      break; // evitar que se desborde el arreglo
+
     token = strtok_r(NULL, " ", &saveptr);
   }
   args[i] = NULL;
@@ -48,7 +75,7 @@ char **parse_command(char *buf)
 }
 
 // Ejecuta el comando ingresado por el usuario
-void execute_command(char **cmd)
+void execute_command(char **cmd, int is_background)
 {
   pid_t pid = fork(); // crear un nuevo proceso
   if (pid == -1)
@@ -66,9 +93,22 @@ void execute_command(char **cmd)
   }
   else
   {
-    // esperar que el proceso hijo termine
-    wait(NULL);
-    return;
+    if (is_background) // si es un comando en segundo plano
+    {
+
+      printf("Comando '%s' en segundo plano con PID %d\n", cmd[0], pid);
+      int devnull = open("/dev/null", O_WRONLY);
+      if (devnull != -1)
+      {
+        dup2(devnull, STDOUT_FILENO); // redirige stdout
+        dup2(devnull, STDERR_FILENO); // redirige stderr
+        close(devnull);
+      }
+    }
+    else // si es un comando en primer plano
+    {
+      wait(NULL); // esperar a que el proceso hijo termine
+    }
   }
 }
 
@@ -100,7 +140,7 @@ void pwd()
 }
 
 // Funcion para hacer el built-in export
-void export(char **cmd)
+void export_variable(char **cmd)
 {
   if (cmd[1] == NULL)
   {
@@ -122,7 +162,7 @@ void export(char **cmd)
   }
 }
 
-void unset(char **cmd)
+void unset_variable(char **cmd)
 {
   if (cmd[1] == NULL)
   {
@@ -137,6 +177,7 @@ void unset(char **cmd)
   }
 }
 
+// Funcion para agregar un comando al historial
 void add_to_history(char *buf)
 {
   if (history_count < HISTORY_SIZE)
@@ -153,7 +194,10 @@ void add_to_history(char *buf)
     history_list[HISTORY_SIZE - 1] = strdup(buf); // agregar el comando nuevo al final
   }
   // guardar historial en un archivo
-  FILE *f = fopen(getenv("HOME") ? strcat(strdup(getenv("HOME")), "/.shell-history") : ".shell-history", "a");
+  char path[1024];
+  snprintf(path, sizeof(path), "%s/.shell-history", getenv("HOME") ?: ".");
+  FILE *f = fopen(path, "a");
+
   if (f)
   {
     fprintf(f, "%s\n", buf);
@@ -185,49 +229,70 @@ void history()
     printf("-> %s\n", history_list[i]);
   }
 }
+
 // Funcion para revisar si se quiere ejecutar un comando built-in
-void exec_builtins(char **cmd)
+int exec_builtins(char **cmd)
 {
   // CLEAR
   if (strcmp(cmd[0], "clear") == 0)
   {
     clear_screen();
+    return 1;
   }
   // CD
   else if (strcmp(cmd[0], "cd") == 0)
   {
     cd(cmd);
+    return 1;
   }
   // EXIT
   else if (strcmp(cmd[0], "exit") == 0)
   {
     exit(0);
+    return 1;
   }
   // PWD
   else if (strcmp(cmd[0], "pwd") == 0)
   {
     pwd();
+    return 1;
   }
   // EXPORT
   else if (strcmp(cmd[0], "export") == 0)
   {
-    export(cmd);
+    export_variable(cmd);
+    return 1;
   }
   // UNSET
   else if (strcmp(cmd[0], "unset") == 0)
   {
-    unset(cmd);
+    unset_variable(cmd);
+    return 1;
   }
   // HISTORY
   else if (strcmp(cmd[0], "history") == 0)
   {
     history();
+    return 1;
   }
-  // si no es built-in, ejecuta el comando (ahora está de más pero lo dejo por si acaso)
-  else
+  return 0;
+}
+
+// Funcion para revisar si se quiere ejecutar un comando en segundo plano. Revisa si el comando termina con '&'
+int is_background_command(char **cmd)
+{
+
+  int i = 0;
+  while (cmd[i] != NULL) // contar el largo del comando
+    i++;
+
+  if (i > 0 && strcmp(cmd[i - 1], "&") == 0)
   {
-    execute_command(cmd);
+    cmd[i - 1] = NULL; // eliminar el '&' del comando
+    return 1;          // si es en segundo plano
   }
+
+  return 0; // no es en segundo plano
 }
 
 // función principal del shell
@@ -245,25 +310,15 @@ int main(void)
     if (cmd[0] == NULL) // No hay comando
       continue;
 
+    int is_background = is_background_command(cmd);
+
     // agregar el comando al historial
     add_to_history(buf);
 
     // revisamos si es built-in
-    if (strcmp(cmd[0], "clear") == 0 ||
-        strcmp(cmd[0], "cd") == 0 ||
-        strcmp(cmd[0], "exit") == 0 ||
-        strcmp(cmd[0], "pwd") == 0 ||
-        strcmp(cmd[0], "export") == 0 ||
-        strcmp(cmd[0], "unset") == 0 ||
-        strcmp(cmd[0], "history") == 0)
+    if (!exec_builtins(cmd))
     {
-      // ejecutar comandos built-in
-      exec_builtins(cmd);
-    }
-    else
-    {
-      // enviamos a ejecutar cualquier otro comando
-      execute_command(cmd);
+      execute_command(cmd, is_background);
     }
   }
   return 0;
