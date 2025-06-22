@@ -91,14 +91,14 @@ void execute_command(char **cmd, int is_background)
   }
   else if (pid == 0)
   {
-    // 🔇 Redirección en segundo plano
+    // redirigir las salidas si es un comando en segundo plano
     if (is_background)
     {
       int devnull = open("/dev/null", O_WRONLY);
       if (devnull != -1)
       {
         dup2(devnull, STDOUT_FILENO);
-        dup2(devnull, STDERR_FILENO); // opcional
+        dup2(devnull, STDERR_FILENO); 
         close(devnull);
       }
     }
@@ -107,7 +107,7 @@ void execute_command(char **cmd, int is_background)
     {
       printf("\nSe produjo un error al ejecutar el comando: %s\n", cmd[0]);
     }
-    _exit(1); // terminar el proceso hijo si execvp falla
+    _exit(1); // terminar el proceso hijo si hay error
   }
   else
   {
@@ -132,7 +132,7 @@ void cd(char **path)
   {
     printf("Error: se requiere un argumento para el comando cd.\n");
   }
-  else if (chdir(path[1]) != 0) // Cambiar directorio
+  else if (chdir(path[1]) != 0) // cambiar directorio
   {
     perror("Error al cambiar de directorio");
   }
